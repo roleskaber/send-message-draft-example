@@ -1,36 +1,12 @@
-import os
-import httpx
 import random
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Body
 from openai import AsyncClient
 
-
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+from telegram_api_manager import TelegramApiManager
 
 client = AsyncClient()
-
+telegram_api_manager = TelegramApiManager()
 app = FastAPI()
-
-TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
-
-
-async def send_draft(chat_id, draft_id, text):
-    async with httpx.AsyncClient() as http:
-        r = await http.post(f"{TELEGRAM_API}/sendMessageDraft", json={
-            "chat_id": chat_id,
-            "draft_id": draft_id,
-            "text": text
-        })
-        print("sendMessageDraft:", r.status_code, r.text)
-
-
-async def send_message(chat_id, text):
-    async with httpx.AsyncClient() as http:
-        await http.post(f"{TELEGRAM_API}/sendMessage", json={
-            "chat_id": chat_id,
-            "text": text
-        })
 
 
 async def generate_stream(user_text):
@@ -44,14 +20,13 @@ async def generate_stream(user_text):
 
 
 @app.post("/telegram/webhook")
-async def webhook(req: Request):
-    data = await req.json()
-
-    if "message" not in data:
+async def webhook(body: dict = Body(...)):
+    if "message" not in body:
         return True
 
-    chat_id = data["message"]["chat"]["id"]
-    user_text = data["message"].get("text", "")
+    chat_id = body["message"]["chat"]["id"]
+    user_text = body["message"].get("text", "")
+
     # for animation
     draft_id = random.randint(1, 2_147_483_647)
     # global buffer
@@ -67,9 +42,9 @@ async def webhook(req: Request):
         buffer += delta
         local_buffer += delta
         if counter % 2 == 0:
-            await send_draft(chat_id, draft_id, buffer)
+            await telegram_api_manager.send_draft(chat_id, draft_id, buffer)
             local_buffer = ""
         counter += 1
 
-    await send_message(chat_id, buffer)
+    await telegram_api_manager.send_message(chat_id, buffer)
     return True
